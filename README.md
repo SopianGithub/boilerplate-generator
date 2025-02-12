@@ -7,7 +7,7 @@ AI-Powered Code Generator untuk MERN/PERN Stack Development.
 1. Clone repository:
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/SopianGithub/boilerplate-generator.git
 cd <repository-name>
 ```
 
