@@ -1,0 +1,15 @@
+{
+  "name": "mern-codegen",
+  "version": "1.0.0",
+  "description": "AI-Powered MERN Stack Code Generator",
+  "main": "codegen",
+  "bin": {
+    "codegen": "./codegen"
+  },
+  "dependencies": {
+    "commander": "^13.1.0",
+    "dotenv": "^16.4.7",
+    "fs-extra": "^11.3.0",
+    "openai": "^4.81.0"
+  }
+}

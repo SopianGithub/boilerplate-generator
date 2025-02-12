@@ -1,0 +1,187 @@
+#!/usr/bin/env node
+const { program } = require('commander');
+const fs = require('fs');
+const path = require('path');
+const { generateProject } = require('./libs/generators');
+const { generateComponent } = require('./libs/ai-services');
+const { setupDatabase } = require('./libs/database');
+const { generateAPI } = require('./libs/api-generator');
+
+// Fungsi untuk mengekstrak kode dari respons OpenAI
+const extractCodeFromResponse = (response) => {
+  // Mencari konten di dalam blok kode
+  const codeBlockRegex = /```(?:jsx?|typescript)?\n([\s\S]*?)```/;
+  const match = response.match(codeBlockRegex);
+  
+  if (match && match[1]) {
+    // Mengembalikan kode yang ada di dalam blok
+    return match[1].trim();
+  }
+  
+  // Jika tidak ada blok kode, kembalikan seluruh respons
+  return response.trim();
+};
+
+program
+  .version('1.0.0')
+  .description('AI-Powered MERN/PERN Stack Code Generator');
+
+program
+  .command('generate <projectName>')
+  .option('-s, --stack <type>', 'Stack type (mern/pern)', 'mern')
+  .action(async (projectName, options) => {
+    await generateProject(projectName, options.stack);
+    console.log(`Project ${projectName} created successfully!`);
+  });
+
+program
+  .command('component <name>')
+  .option('-t, --type <type>', 'Component type (function/class)')
+  .action(async (name, options) => {
+    try {
+      // Validate component name
+      if (!name.match(/^[A-Z][A-Za-z0-9]*$/)) {
+        throw new Error('Component name must start with uppercase letter and only contain alphanumeric characters');
+      }
+
+      const prompt = `Create a React ${options.type || 'function'} component named ${name} with:
+      - Modern React practices (hooks if functional)
+      - PropTypes validation
+      - Clean code structure
+      - Basic styling structure
+      - Error handling
+      - Loading states if needed
+      - Responsive design considerations`;
+    
+      console.log('🤖 Generating component with AI...');
+      const aiResponse = await generateComponent(prompt);
+      // Ekstrak kode dari respons AI
+      const generatedCode = extractCodeFromResponse(aiResponse);
+
+      // Create directory structure
+      const componentsDir = path.join(process.cwd(), 'src', 'client', 'components');
+      const componentDir = path.join(componentsDir, name);
+
+      // Create directories if they don't exist
+      if (!fs.existsSync(componentsDir)) {
+        fs.mkdirSync(componentsDir, { recursive: true });
+      }
+      if (!fs.existsSync(componentDir)) {
+        fs.mkdirSync(componentDir);
+      }
+
+      // Write component file
+      const componentPath = path.join(componentDir, `${name}.jsx`);
+      fs.writeFileSync(componentPath, generatedCode);
+
+      // Create index.js
+      const indexContent = `export { default } from './${name}';\n`;
+      fs.writeFileSync(path.join(componentDir, 'index.js'), indexContent);
+
+      // Create CSS file
+      const cssContent = `
+        .${name.toLowerCase()} {
+          /* Add your styles here */
+        }`;
+      fs.writeFileSync(path.join(componentDir, `${name}.css`), cssContent);
+
+      console.log('\n✅ Component generated successfully!');
+      console.log('\nFiles created:');
+      console.log(`- Component: ${componentPath}`);
+      console.log(`- CSS: ${path.join(componentDir, `${name}.css`)}`);
+      console.log(`- Index: ${path.join(componentDir, 'index.js')}`);
+      console.log('\nYou can now import your component using:');
+      console.log(`import ${name} from './components/${name}';\n`);
+
+    } catch (error) {
+      console.error('❌ Error generating component:', error.message);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('schema <modelName>')
+  .option('-d, --db <type>', 'Database type (mongo/postgres)')
+  .action(async (modelName, options) => {
+    try {
+      console.log('🤖 Generating schema...');
+      const schema = await setupDatabase(modelName, options.db);
+
+      // Create directory structure
+      const modelsDir = path.join(process.cwd(), 'src' ,'server', 'models');
+      if (!fs.existsSync(modelsDir)) {
+        fs.mkdirSync(modelsDir, { recursive: true });
+      }
+
+      // Write schema file
+      const fileName = `${modelName.toLowerCase()}.model.js`;
+      const schemaPath = path.join(modelsDir, fileName);
+      fs.writeFileSync(schemaPath, schema);
+
+      console.log('\n✅ Schema generated successfully!');
+      console.log('\nFile created:');
+      console.log(`- Schema: ${schemaPath}`);
+      console.log('\nYou can now import your model using:');
+      console.log(`import ${modelName}Model from './models/${fileName}';\n`);
+
+    } catch (error) {
+      console.error('❌ Error generating schema:', error.message);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('api <resource>')
+  .option('-o, --operations <ops>', 'CRUD operations (comma separated)')
+  .action(async (resource, options) => {
+    try {
+      console.log('🤖 Generating API endpoints...');
+      const apiCode = await generateAPI(resource, options.operations.split(','));
+
+      // Create directory structure
+      const routesDir = path.join(process.cwd(), 'src', 'server', 'routes');
+      const controllersDir = path.join(process.cwd(), 'src', 'server', 'controllers');
+
+      // Create directories if they don't exist
+      [routesDir, controllersDir].forEach(dir => {
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+      });
+
+      // Write route file
+      const routeFileName = `${resource.toLowerCase()}.routes.js`;
+      const routePath = path.join(routesDir, routeFileName);
+      
+      const routeTemplate = `const express = require('express');
+const router = express.Router();
+const ${resource}Controller = require('../controllers/${resource.toLowerCase()}.controller');
+
+${apiCode.routes}
+
+module.exports = router;`;
+
+      fs.writeFileSync(routePath, routeTemplate);
+
+      // Write controller file
+      const controllerFileName = `${resource.toLowerCase()}.controller.js`;
+      const controllerPath = path.join(controllersDir, controllerFileName);
+      
+      fs.writeFileSync(controllerPath, apiCode.controllers);
+
+      console.log('\n✅ API endpoints generated successfully!');
+      console.log('\nFiles created:');
+      console.log(`- Routes: ${routePath}`);
+      console.log(`- Controller: ${controllerPath}`);
+      console.log('\nDon\'t forget to:');
+      console.log(`1. Import and use the routes in your app:`);
+      console.log(`   app.use('/api/${resource.toLowerCase()}s', require('./routes/${routeFileName}'));\n`);
+      console.log(`2. Set up your database connection\n`);
+
+    } catch (error) {
+      console.error('❌ Error generating API:', error.message);
+      process.exit(1);
+    }
+  });
+
+program.parse(process.argv);
